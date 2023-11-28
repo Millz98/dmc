@@ -3,18 +3,13 @@ from tqdm import tqdm
 import requests
 import os
 
-def download_video(yt, choice, destination):
-    try:
-        # download the chosen file
-        if choice == 1:
-            download_audio(yt, destination)
-        else:
-            download_video_file(yt, destination)
-
-        # result of success
-        print(yt.title + " has been successfully downloaded.")
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
+def print_video_information(yt):
+    print(f"Title: {yt.title}")
+    print(f"Duration: {yt.length} seconds")
+    print(f"Upload Date: {yt.publish_date}")
+    print(f"View Count: {yt.views}")
+    print(f"Description: {yt.description}")
+    print()
 
 def download_audio(yt, destination):
     # get the best quality stream for audio
@@ -46,7 +41,22 @@ def download_video_file(yt, destination):
                     if chunk:
                         f.write(chunk)
                         bar.update(1024)
-        print("Video has been successfully downloaded!")                
+
+def download_video(yt, choice, destination):
+    try:
+        # Print video information
+        print_video_information(yt)
+
+        # Download the chosen file
+        if choice == 1:
+            download_audio(yt, destination)
+        else:
+            download_video_file(yt, destination)
+
+        # Result of success
+        print(yt.title + " has been successfully downloaded.")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
 
 def download_playlist(playlist_url, choice, destination):
     try:
