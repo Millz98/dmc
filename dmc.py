@@ -61,15 +61,17 @@ if choice == 2:
     download_option = int(input("Choose download option:\n1. Single Video\n2. Entire Playlist\nEnter your choice (1 or 2): "))
     
     if download_option == 1:
+        # Download a single video
         video_url = input("Enter the URL of the YouTube video you want to download: ")
-        destination = str(input("Enter the destination (leave blank for current directory): ")) or '.'
+        destination = input("Enter the full path to the destination folder (e.g., D:\\Downloads): ")
         
         yt = YouTube(video_url)
         download_video(yt, choice, destination)
         
     elif download_option == 2:
+        # Download an entire playlist
         playlist_url = input("Enter the URL of the YouTube playlist you want to download: ")
-        destination = str(input("Enter the destination (leave blank for current directory): ")) or '.'
+        destination = input("Enter the full path to the destination folder (e.g., D:\\Downloads): ")
         
         download_playlist(playlist_url, choice, destination)
 
