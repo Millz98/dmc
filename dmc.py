@@ -46,13 +46,22 @@ def download_video_file(yt, destination):
                     if chunk:
                         f.write(chunk)
                         bar.update(1024)
+        print("Video has been successfully downloaded!")                
 
 def download_playlist(playlist_url, choice, destination):
-    playlist = Playlist(playlist_url)
+    try:
+        playlist = Playlist(playlist_url)
 
-    for video_url in playlist.video_urls:
-        yt = YouTube(video_url)
-        download_video(yt, choice, destination)
+        for video_url in playlist.video_urls:
+            try:
+                yt = YouTube(video_url)
+                download_video(yt, choice, destination)
+            except Exception as e:
+                print(f"Error processing video {video_url}: {str(e)}")
+
+        print("Playlist has been successfully downloaded.")
+    except Exception as e:
+        print(f"An error occurred while processing the playlist: {str(e)}")
 
 # Example usage
 choice = int(input("Choose download format:\n1. MP3 (Audio)\n2. MP4 (Video)\nEnter your choice (1 or 2): "))
@@ -65,8 +74,11 @@ if choice == 2:
         video_url = input("Enter the URL of the YouTube video you want to download: ")
         destination = input("Enter the full path to the destination folder (e.g., D:\\Downloads): ")
         
-        yt = YouTube(video_url)
-        download_video(yt, choice, destination)
+        try:
+            yt = YouTube(video_url)
+            download_video(yt, choice, destination)
+        except Exception as e:
+            print(f"Error processing video {video_url}: {str(e)}")
         
     elif download_option == 2:
         # Download an entire playlist
