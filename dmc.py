@@ -4,8 +4,6 @@ import requests
 import os
 from moviepy.editor import AudioFileClip
 
-os.environ["IMAGEIO_FFMPEG_EXE"] = "/opt/homebrew/opt/ffmpeg"
-
 def print_video_information(yt):
     print(f"Title: {yt.title}")
     print(f"Duration: {yt.length} seconds")
@@ -83,31 +81,45 @@ def download_playlist(playlist_url, choice, destination):
     except Exception as e:
         print(f"An error occurred while processing the playlist: {str(e)}")
 
-# Example usage
-choice = int(input("Choose download format:\n1. MP3 (Audio)\n2. MP4 (Video)\nEnter your choice (1 or 2): "))
+def main():
+    while True:
+        print("\nOptions:")
+        print("1. Download")
+        print("2. Quit")
 
-download_option = int(input("Choose download option:\n1. Single Video\n2. Entire Playlist\nEnter your choice (1 or 2): "))
+        option = input("Enter your choice (1 or 2): ")
 
-if download_option == 1:
-    # Download a single video
-    video_url = input("Enter the URL of the YouTube video you want to download: ")
-    destination = input("Enter the full path to the destination folder (e.g., D:\\Downloads): ")
+        if option == "1":
+            choice = int(input("Choose download format:\n1. MP3 (Audio)\n2. MP4 (Video)\nEnter your choice (1 or 2): "))
+            download_option = int(input("Choose download option:\n1. Single Video\n2. Entire Playlist\nEnter your choice (1 or 2): "))
 
-    try:
-        yt = YouTube(video_url)
-        download_video(yt, choice, destination)
-    except Exception as e:
-        print(f"Error processing video {video_url}: {str(e)}")
+            if download_option == 1:
+                # Download a single video
+                video_url = input("Enter the URL of the YouTube video you want to download: ")
+                destination = input("Enter the full path to the destination folder (e.g., D:\\Downloads): ")
+                
+                try:
+                    yt = YouTube(video_url)
+                    download_video(yt, choice, destination)
+                except Exception as e:
+                    print(f"Error processing video {video_url}: {str(e)}")
+                
+            elif download_option == 2:
+                # Download an entire playlist
+                playlist_url = input("Enter the URL of the YouTube playlist you want to download: ")
+                destination = input("Enter the full path to the destination folder (e.g., D:\\Downloads): ")
+                
+                download_playlist(playlist_url, choice, destination)
 
-elif download_option == 2 and choice == 2:
-    # Download an entire playlist for video
-    playlist_url = input("Enter the URL of the YouTube playlist you want to download: ")
-    destination = input("Enter the full path to the destination folder (e.g., D:\\Downloads): ")
+            else:
+                print("Invalid download option.")
 
-    download_playlist(playlist_url, choice, destination)
+        elif option == "2":
+            print("Thank you for using the DMC!!")
+            break
 
-elif download_option == 2 and choice == 1:
-    print("Downloading audio does not support playlist downloads.")
+        else:
+            print("Invalid option. Please enter 1 or 2.")
 
-else:
-    print("Invalid download option.")
+if __name__ == "__main__":
+    main()
