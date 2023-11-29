@@ -99,6 +99,9 @@ class DMCApp(QWidget):
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setValue(0)
 
+        self.progress_label = QLabel(self)
+        self.progress_label.setAlignment(Qt.AlignCenter)
+
         # Layout
         layout = QVBoxLayout()
         layout.addWidget(self.label_url)
@@ -109,6 +112,7 @@ class DMCApp(QWidget):
         layout.addWidget(self.radio_video)
         layout.addWidget(self.button_download)
         layout.addWidget(self.progress_bar)
+        layout.addWidget(self.progress_label)
         self.setLayout(layout)
 
     def browse_destination(self):
@@ -162,6 +166,11 @@ class DMCApp(QWidget):
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)
+        percentage = f"{value}%"
+        self.progress_label.setText(percentage)
+        if value == 100:
+            self.progress_label.setText("Complete")
+
 
 def main():
     app = QApplication([])
