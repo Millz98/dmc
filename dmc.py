@@ -4,17 +4,19 @@ import requests
 import os
 from moviepy.editor import AudioFileClip
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFileDialog, QRadioButton, QProgressBar
-from PyQt5.QtCore import QThread, pyqtSignal
-from urllib.parse import urlparse, parse_qs
-
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
 def print_video_information(yt):
-    print(f"Title: {yt.title}")
-    print(f"Duration: {yt.length} seconds")
-    print(f"Upload Date: {yt.publish_date}")
-    print(f"View Count: {yt.views}")
-    print(f"Description: {yt.description}")
-    print()
+    print(f"Video Title: {yt.title}")
+    print(f"Video Duration: {yt.length} seconds")
+    print(f"Video Resolution: {yt.streams.get_highest_resolution().resolution}")
+    print(f"Video Format: {yt.streams.get_highest_resolution().mime_type}")
+    print(f"Audio Codec: {yt.streams.get_audio_only().abr} kbps")
+    print(f"Video Codec: {yt.streams.get_highest_resolution().video_codec}")
+    print(f"File Size: {yt.streams.get_highest_resolution().filesize / (1024 * 1024):.2f} MB")
+    print(f"Number of Views: {yt.views}")
+    print(f"Video URL: {yt.watch_url}")
+
 class DownloadThread(QThread):
     progress_update = pyqtSignal(int)
 
@@ -35,71 +37,43 @@ class DownloadThread(QThread):
             print(f"{self.yt.title} has been successfully downloaded.")
         except Exception as e:
             print(f"An error occurred: {str(e)}")
-    
-    def get_video_id(url):
-    # Try to extract video ID from various YouTube URL formats
-        parsed_url = urlparse(url)
-        print("Parsed URL:", parsed_url)
-
-        video_id = parse_qs(parsed_url.query).get("v")
-        print("Extracted video ID:", video_id)
-
-        if video_id:
-        # Case 1: URL is in the format "https://www.youtube.com/watch?v=VIDEO_ID"
-            return video_id[0]
-
-        if "youtu.be" in parsed_url.netloc:
-        # Case 2: URL is in the format "https://youtu.be/VIDEO_ID"
-            return parsed_url.path[1:]
-
-    # If no match is found
-        raise ValueError("Could not extract video ID from the URL")
-
-# Usage example:
-    url = "https://www.youtube.com/watch?v=abcd1234"
-    try:
-        video_id = get_video_id(url)
-        print("Video ID:", video_id)
-    except ValueError as e:
-        print("Error:", str(e))        
 
     def download_audio(self):
-        # get the best quality stream for audio
         audio_stream = self.yt.streams.filter(only_audio=True).order_by('abr').last()
 
-        # create a progress bar for audio download
-        with tqdm(total=audio_stream.filesize, unit='B', unit_scale=True, unit_divisor=1024, desc='Audio') as bar:
-            with requests.get(audio_stream.url, stream=True) as response:
-                with open(os.path.join(self.destination, audio_stream.default_filename), 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=1024):
-                        if chunk:
-                            f.write(chunk)
-                            bar.update(1024)
+        with requests.get(audio_stream.url, stream=True) as response:
+            with open(os.path.join(self.destination, audio_stream.default_filename), 'wb') as f:
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                for data in response.iter_content(chunk_size=1024):
+                    downloaded += len(data)
+                    f.write(data)
+                    progress = int((downloaded / total_size) * 100)
+                    self.progress_update.emit(progress)
 
-        # save the audio file as MP3 using moviepy
         base, _ = os.path.splitext(os.path.join(self.destination, audio_stream.default_filename))
         audio_new_file = base + '.mp3'
-        
-        # Convert audio file to MP3 using MoviePy
+
         audio_clip = AudioFileClip(os.path.join(self.destination, audio_stream.default_filename))
         audio_clip.write_audiofile(audio_new_file, codec='mp3')
         audio_clip.close()
 
-        # remove the original audio file
         os.remove(os.path.join(self.destination, audio_stream.default_filename))
 
     def download_video_file(self):
-        # get the best quality stream for video
         video_stream = self.yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').last()
 
-        # create a progress bar for video download
-        with tqdm(total=video_stream.filesize, unit='B', unit_scale=True, unit_divisor=1024, desc='Video') as bar:
-            with requests.get(video_stream.url, stream=True) as response:
-                with open(os.path.join(self.destination, video_stream.default_filename), 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=1024):
-                        if chunk:
-                            f.write(chunk)
-                            bar.update(1024)
+        with requests.get(video_stream.url, stream=True) as response:
+            with open(os.path.join(self.destination, video_stream.default_filename), 'wb') as f:
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                for data in response.iter_content(chunk_size=1024):
+                    downloaded += len(data)
+                    f.write(data)
+                    progress = int((downloaded / total_size) * 100)
+                    self.progress_update.emit(progress)
+
+        self.progress_update.emit(100)
 
 class DMCApp(QWidget):
     def __init__(self):
