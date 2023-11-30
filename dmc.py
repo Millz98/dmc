@@ -77,7 +77,8 @@ class DownloadThread(QThread):
     # Download video stream
     def download_video_file(self):
         yt = YouTube(self.yt.watch_url)
-        video_stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').last()
+        video_streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
+        video_stream = video_streams.first()
 
         with requests.get(video_stream.url, stream=True) as response:
             with open(os.path.join(self.destination, video_stream.default_filename), 'wb') as f:
