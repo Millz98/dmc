@@ -39,6 +39,7 @@ class DownloadThread(QThread):
         self.choice = choice
         self.destination = destination
         self.video_processor = video_processor
+        
 
 
     def run(self):
@@ -127,6 +128,7 @@ class DMCApp(QWidget):
         self.edit_url = QLineEdit(self)
         self.button_browse = QPushButton("Browse", self)
         self.button_browse.clicked.connect(self.browse_destination)
+        self.setWindowTitle("DMC")  # Set the window title to "DMC"
 
         self.label_format = QLabel("Choose download format:")
         self.radio_audio = QRadioButton("MP3 (Audio)")
