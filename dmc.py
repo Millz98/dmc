@@ -3,7 +3,7 @@ import requests
 import os
 from moviepy.editor import AudioFileClip
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFileDialog, QRadioButton, QProgressBar, QMessageBox
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QObject
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QObject, QMetaObject
 
 # VideoProcessor class processes video information and emits signals for UI update
 class VideoProcessor(QObject):
@@ -45,6 +45,9 @@ class Downloader(QThread):
                 self.download_audio()
             else:
                 self.download_video_file()
+
+            self.video_processor.update_progress_signal.connect(self.progress_update)
+      
 
             # Notify UI that the download is complete
             print(f"{self.yt.title} has been successfully downloaded.")
@@ -110,6 +113,7 @@ class DMCApp(QWidget):
         self.processing_queue = False
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.process_queue)
+        update_progress_signal = pyqtSignal(int)
 
         if self.download_thread:
             self.download_thread.download_error.connect(self.show_error_message)
@@ -234,12 +238,16 @@ class DMCApp(QWidget):
 
     # Update the progress bar and label during a download
     def update_progress(self, value):
-        self.progress_bar.setValue(value)
+        
+        # Use QMetaObject.invokeMethod to update UI elements safely
+        QMetaObject.invokeMethod(self.progress_bar, "setValue", Qt.QueuedConnection, value)
         percentage = f"{value}%"
-        self.progress_label.setText(percentage)
+        QMetaObject.invokeMethod(self.progress_label, "setText", Qt.QueuedConnection, percentage)
+
         if value == 100:
-            self.progress_label.setText("Complete")
+            QMetaObject.invokeMethod(self.progress_label, "setText", Qt.QueuedConnection, "Complete")
             self.timer.start(3000)
+        
 
 # Main function to run the application
 def main():
