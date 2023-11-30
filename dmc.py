@@ -26,10 +26,11 @@ class VideoProcessor(QObject):
         self.print_information_signal.emit(info_str)
 
 # Downloader class handles the download process in a separate thread
-class Downloader(QThread):
+class DownloadThread(QThread):
     progress_update = pyqtSignal(int)
     download_complete = pyqtSignal()
     download_error = pyqtSignal(str)
+    update_progress_signal = pyqtSignal(int)  # Add this line
 
     def __init__(self, yt, choice, destination, video_processor):
         super().__init__()
@@ -37,6 +38,7 @@ class Downloader(QThread):
         self.choice = choice
         self.destination = destination
         self.video_processor = video_processor
+
 
     def run(self):
         try:
@@ -46,7 +48,8 @@ class Downloader(QThread):
             else:
                 self.download_video_file()
 
-            self.video_processor.update_progress_signal.connect(self.progress_update)
+                self.update_progress_signal.connect(self.progress_update)
+
       
 
             # Notify UI that the download is complete
@@ -206,7 +209,7 @@ class DMCApp(QWidget):
         if not self.processing_queue and self.download_queue:
             self.processing_queue = True
             yt, choice, destination = self.download_queue.pop(0)
-            self.download_thread = Downloader(yt, choice, destination, self.video_processor)
+            self.download_thread = DownloadThread(yt, choice, destination, self.video_processor)
             self.download_thread.progress_update.connect(self.update_progress)
             self.download_thread.download_complete.connect(self.reset_ui)
             self.download_thread.download_error.connect(self.show_error_message)
@@ -238,15 +241,15 @@ class DMCApp(QWidget):
 
     # Update the progress bar and label during a download
     def update_progress(self, value):
-        
-        # Use QMetaObject.invokeMethod to update UI elements safely
-        QMetaObject.invokeMethod(self.progress_bar, "setValue", Qt.QueuedConnection, value)
+        # Update the progress bar directly without using invokeMethod
+        self.progress_bar.setValue(value)
         percentage = f"{value}%"
-        QMetaObject.invokeMethod(self.progress_label, "setText", Qt.QueuedConnection, percentage)
+        self.progress_label.setText(percentage)
 
         if value == 100:
-            QMetaObject.invokeMethod(self.progress_label, "setText", Qt.QueuedConnection, "Complete")
+            self.progress_label.setText("Complete")
             self.timer.start(3000)
+
         
 
 # Main function to run the application
