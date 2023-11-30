@@ -1,48 +1,38 @@
-import logging
 from pytube import YouTube, Playlist
 import requests
 import os
 from moviepy.editor import AudioFileClip
-from PyQt5.QtWidgets import (
-    QApplication,
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QPushButton,
-    QLineEdit,
-    QFileDialog,
-    QRadioButton,
-    QProgressBar,
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFileDialog, QRadioButton, QProgressBar
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QObject  # Add QObject here
 
-# Configure logging
-logging.basicConfig(
-    filename='download_log.txt',
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s]: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 
-def print_video_information(yt):
-    logging.info(f"Video Title: {yt.title}")
-    logging.info(f"Video Duration: {yt.length} seconds")
-    logging.info(f"Video Resolution: {yt.streams.get_highest_resolution().resolution}")
-    logging.info(f"Video Format: {yt.streams.get_highest_resolution().mime_type}")
-    logging.info(f"Audio Codec: {yt.streams.get_audio_only().abr} kbps")
-    logging.info(f"Video Codec: {yt.streams.get_highest_resolution().video_codec}")
-    logging.info(f"File Size: {yt.streams.get_highest_resolution().filesize / (1024 * 1024):.2f} MB")
-    logging.info(f"Number of Views: {yt.views}")
-    logging.info(f"Video URL: {yt.watch_url}")
+class VideoProcessor(QObject):
+    print_information_signal = pyqtSignal(str)
+
+    def print_video_information(self, yt):
+        info_str = (
+            f"Video Title: {yt.title}\n"
+            f"Video Duration: {yt.length} seconds\n"
+            f"Video Resolution: {yt.streams.get_highest_resolution().resolution}\n"
+            f"Video Format: {yt.streams.get_highest_resolution().mime_type}\n"
+            f"Audio Codec: {yt.streams.get_audio_only().abr} kbps\n"
+            f"Video Codec: {yt.streams.get_highest_resolution().video_codec}\n"
+            f"File Size: {yt.streams.get_highest_resolution().filesize / (1024 * 1024):.2f} MB\n"
+            f"Number of Views: {yt.views}\n"
+            f"Video URL: {yt.watch_url}"
+        )
+        self.print_information_signal.emit(info_str)
 
 class DownloadThread(QThread):
     progress_update = pyqtSignal(int)
+    download_complete = pyqtSignal()
 
-    def __init__(self, yt, choice, destination):
+    def __init__(self, yt, choice, destination, video_processor):
         super().__init__()
         self.yt = yt
         self.choice = choice
         self.destination = destination
+        self.video_processor = video_processor
 
     def run(self):
         try:
@@ -52,11 +42,9 @@ class DownloadThread(QThread):
                 self.download_video_file()
 
             # Result of success
-            logging.info(f"{self.yt.title} has been successfully downloaded.")
+            self.download_complete.emit()
         except Exception as e:
-            logging.error(f"An error occurred: {str(e)}")
-        finally:
-            self.finished.emit()  # Emit the finished signal when the download is complete
+            print(f"An error occurred: {str(e)}")
 
     def download_audio(self):
         audio_stream = self.yt.streams.filter(only_audio=True).order_by('abr').last()
@@ -97,6 +85,7 @@ class DownloadThread(QThread):
                     progress = int((downloaded / total_size) * 100)
                     self.progress_update.emit(progress)
 
+        self.video_processor.print_video_information(yt)
         self.progress_update.emit(100)
 
 class DMCApp(QWidget):
@@ -105,6 +94,11 @@ class DMCApp(QWidget):
 
         self.init_ui()
         self.download_thread = None
+        self.video_processor = VideoProcessor()
+        self.download_queue = []
+        self.processing_queue = False
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.process_queue)
 
     def init_ui(self):
         # Widgets
@@ -118,7 +112,7 @@ class DMCApp(QWidget):
         self.radio_video = QRadioButton("MP4 (Video)")
 
         self.button_download = QPushButton("Download", self)
-        self.button_download.clicked.connect(self.download)
+        self.button_download.clicked.connect(self.enqueue_download)
 
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setValue(0)
@@ -143,51 +137,56 @@ class DMCApp(QWidget):
         folder_path = QFileDialog.getExistingDirectory(self, "Select Destination Folder")
         self.edit_url.setText(folder_path)
 
-    def download(self):
+    def enqueue_download(self):
         url = self.edit_url.text()
-        destination = self.edit_url.text()
+        destination = QFileDialog.getExistingDirectory(self, "Select Destination Folder")
 
         if not url or not destination:
-            logging.error("Please enter both URL and destination folder.")
+            print("Please enter both URL and destination folder.")
             return
 
         try:
-            url = self.edit_url.text()
-            destination = QFileDialog.getExistingDirectory(self, "Select Destination Folder")
-
             yt = YouTube(url)
-
-            # Print video information
-            print_video_information(yt)
-
-            # Download the chosen file
             choice = 1 if self.radio_audio.isChecked() else 2
 
             if "/playlist" in url:
-                self.download_playlist(url, choice, destination)
+                self.enqueue_playlist(url, choice, destination)
             else:
-                self.download_thread = DownloadThread(yt, choice, destination)
-                self.download_thread.progress_update.connect(self.update_progress)
-                self.download_thread.finished.connect(self.reset_ui)  # Connect to reset UI after download
-                self.download_thread.start()
+                self.download_queue.append((yt, choice, destination))
+                self.process_queue()
 
         except Exception as e:
-            logging.error(f"An error occurred: {str(e)}")
+            print(f"An error occurred: {str(e)}")
 
-    def download_playlist(self, playlist_url, choice, destination):
+    def enqueue_playlist(self, playlist_url, choice, destination):
         try:
             playlist = Playlist(playlist_url)
 
             for video_url in playlist.video_urls:
                 try:
                     yt = YouTube(video_url)
-                    self.download_audio(yt, destination)
+                    self.download_queue.append((yt, choice, destination))
                 except Exception as e:
-                    logging.error(f"Error processing video {video_url}: {str(e)}")
+                    print(f"Error processing video {video_url}: {str(e)}")
 
-            logging.info("Playlist has been successfully downloaded.")
+            print("Playlist has been enqueued.")
+            self.process_queue()
+
         except Exception as e:
-            logging.error(f"An error occurred while processing the playlist: {str(e)}")
+            print(f"An error occurred while processing the playlist: {str(e)}")
+
+    def process_queue(self):
+        if not self.processing_queue and self.download_queue:
+            self.processing_queue = True
+            yt, choice, destination = self.download_queue.pop(0)
+            self.download_thread = DownloadThread(yt, choice, destination, self.video_processor)
+            self.download_thread.progress_update.connect(self.update_progress)
+            self.download_thread.download_complete.connect(self.reset_ui)  # Connect to reset UI after download
+            self.download_thread.finished.connect(self.set_queue_flag_false)
+            self.download_thread.start()
+
+    def set_queue_flag_false(self):
+        self.processing_queue = False
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)
@@ -195,6 +194,7 @@ class DMCApp(QWidget):
         self.progress_label.setText(percentage)
         if value == 100:
             self.progress_label.setText("Complete")
+            self.timer.start(3000)  # Delay before processing the next item in the queue
 
     def reset_ui(self):
         # Reset UI elements to their initial state
@@ -203,6 +203,7 @@ class DMCApp(QWidget):
         self.radio_video.setChecked(False)
         self.progress_bar.setValue(0)
         self.progress_label.clear()
+        self.process_queue()
 
 def main():
     app = QApplication([])
