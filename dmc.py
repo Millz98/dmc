@@ -1,29 +1,46 @@
+import logging
 from pytube import YouTube, Playlist
-from pyvimeo import Vimeo
-from tqdm import tqdm
 import requests
 import os
 from moviepy.editor import AudioFileClip
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFileDialog, QRadioButton, QProgressBar
+from PyQt5.QtWidgets import (
+    QApplication,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QFileDialog,
+    QRadioButton,
+    QProgressBar,
+)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
+# Configure logging
+logging.basicConfig(
+    filename='download_log.txt',
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s]: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
 def print_video_information(yt):
-    print(f"Video Title: {yt.title}")
-    print(f"Video Duration: {yt.length} seconds")
-    print(f"Video Resolution: {yt.streams.get_highest_resolution().resolution}")
-    print(f"Video Format: {yt.streams.get_highest_resolution().mime_type}")
-    print(f"Audio Codec: {yt.streams.get_audio_only().abr} kbps")
-    print(f"Video Codec: {yt.streams.get_highest_resolution().video_codec}")
-    print(f"File Size: {yt.streams.get_highest_resolution().filesize / (1024 * 1024):.2f} MB")
-    print(f"Number of Views: {yt.views}")
-    print(f"Video URL: {yt.watch_url}")
+    logging.info(f"Video Title: {yt.title}")
+    logging.info(f"Video Duration: {yt.length} seconds")
+    logging.info(f"Video Resolution: {yt.streams.get_highest_resolution().resolution}")
+    logging.info(f"Video Format: {yt.streams.get_highest_resolution().mime_type}")
+    logging.info(f"Audio Codec: {yt.streams.get_audio_only().abr} kbps")
+    logging.info(f"Video Codec: {yt.streams.get_highest_resolution().video_codec}")
+    logging.info(f"File Size: {yt.streams.get_highest_resolution().filesize / (1024 * 1024):.2f} MB")
+    logging.info(f"Number of Views: {yt.views}")
+    logging.info(f"Video URL: {yt.watch_url}")
 
 class DownloadThread(QThread):
     progress_update = pyqtSignal(int)
 
-    def __init__(self, video, choice, destination):
+    def __init__(self, yt, choice, destination):
         super().__init__()
-        self.video = video
+        self.yt = yt
         self.choice = choice
         self.destination = destination
 
@@ -35,12 +52,14 @@ class DownloadThread(QThread):
                 self.download_video_file()
 
             # Result of success
-            print(f"{self.video.title} has been successfully downloaded.")
+            logging.info(f"{self.yt.title} has been successfully downloaded.")
         except Exception as e:
-            print(f"An error occurred: {str(e)}")
+            logging.error(f"An error occurred: {str(e)}")
+        finally:
+            self.finished.emit()  # Emit the finished signal when the download is complete
 
     def download_audio(self):
-        audio_stream = self.video.streams.filter(only_audio=True).order_by('abr').last()
+        audio_stream = self.yt.streams.filter(only_audio=True).order_by('abr').last()
 
         with requests.get(audio_stream.url, stream=True) as response:
             with open(os.path.join(self.destination, audio_stream.default_filename), 'wb') as f:
@@ -62,7 +81,11 @@ class DownloadThread(QThread):
         os.remove(os.path.join(self.destination, audio_stream.default_filename))
 
     def download_video_file(self):
-        video_stream = self.video.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').last()
+        # Create a new YouTube object with the updated URL
+        yt = YouTube(self.yt.watch_url)
+
+        # Choose the appropriate video stream based on file format
+        video_stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').last()
 
         with requests.get(video_stream.url, stream=True) as response:
             with open(os.path.join(self.destination, video_stream.default_filename), 'wb') as f:
@@ -85,7 +108,7 @@ class DMCApp(QWidget):
 
     def init_ui(self):
         # Widgets
-        self.label_url = QLabel("Enter the URL of the video or playlist:")
+        self.label_url = QLabel("Enter the URL of the YouTube video or playlist:")
         self.edit_url = QLineEdit(self)
         self.button_browse = QPushButton("Browse", self)
         self.button_browse.clicked.connect(self.browse_destination)
@@ -125,30 +148,46 @@ class DMCApp(QWidget):
         destination = self.edit_url.text()
 
         if not url or not destination:
-            print("Please enter both URL and destination folder.")
+            logging.error("Please enter both URL and destination folder.")
             return
 
         try:
+            url = self.edit_url.text()
+            destination = QFileDialog.getExistingDirectory(self, "Select Destination Folder")
+
             yt = YouTube(url)
-            self.download_video(yt, destination)
+
+            # Print video information
+            print_video_information(yt)
+
+            # Download the chosen file
+            choice = 1 if self.radio_audio.isChecked() else 2
+
+            if "/playlist" in url:
+                self.download_playlist(url, choice, destination)
+            else:
+                self.download_thread = DownloadThread(yt, choice, destination)
+                self.download_thread.progress_update.connect(self.update_progress)
+                self.download_thread.finished.connect(self.reset_ui)  # Connect to reset UI after download
+                self.download_thread.start()
 
         except Exception as e:
-            try:
-                vimeo = Vimeo(url)
-                self.download_video(vimeo, destination)
-            except Exception as e:
-                print(f"An error occurred: {str(e)}")
+            logging.error(f"An error occurred: {str(e)}")
 
-    def download_video(self, video, destination):
-        # Print video information
-        print_video_information(video)
+    def download_playlist(self, playlist_url, choice, destination):
+        try:
+            playlist = Playlist(playlist_url)
 
-        # Download the chosen file
-        choice = 1 if self.radio_audio.isChecked() else 2
+            for video_url in playlist.video_urls:
+                try:
+                    yt = YouTube(video_url)
+                    self.download_audio(yt, destination)
+                except Exception as e:
+                    logging.error(f"Error processing video {video_url}: {str(e)}")
 
-        self.download_thread = DownloadThread(video, choice, destination)
-        self.download_thread.progress_update.connect(self.update_progress)
-        self.download_thread.start()
+            logging.info("Playlist has been successfully downloaded.")
+        except Exception as e:
+            logging.error(f"An error occurred while processing the playlist: {str(e)}")
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)
@@ -157,6 +196,13 @@ class DMCApp(QWidget):
         if value == 100:
             self.progress_label.setText("Complete")
 
+    def reset_ui(self):
+        # Reset UI elements to their initial state
+        self.edit_url.clear()
+        self.radio_audio.setChecked(False)
+        self.radio_video.setChecked(False)
+        self.progress_bar.setValue(0)
+        self.progress_label.clear()
 
 def main():
     app = QApplication([])
