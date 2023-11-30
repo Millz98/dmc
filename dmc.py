@@ -4,6 +4,7 @@ import os
 from moviepy.editor import AudioFileClip
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFileDialog, QRadioButton, QProgressBar, QMessageBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QObject, QMetaObject
+from qtawesome import icon
 
 # VideoProcessor class processes video information and emits signals for UI update
 class VideoProcessor(QObject):
