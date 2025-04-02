@@ -3,7 +3,7 @@ import sys
 import subprocess
 import json
 import time
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFileDialog, QRadioButton, QProgressBar, QMessageBox, QHBoxLayout
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFileDialog, QRadioButton, QProgressBar, QMessageBox, QHBoxLayout, QComboBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QObject
 
 # Check if yt-dlp is installed, if not, install it
@@ -48,22 +48,24 @@ class VideoProcessor(QObject):
                 
                 view_count = info_dict.get('view_count')
                 if view_count:
-                    info_str += f"Number of Views: {view_count}\n"
+                    info_str += f"Number of Views: {view_count:,}\n"
                     
                 like_count = info_dict.get('like_count')
                 if like_count:
-                    info_str += f"Number of Likes: {like_count}\n"
+                    info_str += f"Number of Likes: {like_count:,}\n"
                 
-                # Get resolution if available
-                height = info_dict.get('height')
-                width = info_dict.get('width')
-                if height and width:
-                    info_str += f"Resolution: {width}x{height}\n"
-                
-                # Get filesize if available
-                filesize = info_dict.get('filesize')
-                if filesize:
-                    info_str += f"File Size: {filesize / (1024 * 1024):.2f} MB\n"
+                # Get available formats
+                formats = info_dict.get('formats', [])
+                if formats:
+                    # Find the best video format
+                    best_video = None
+                    for fmt in formats:
+                        if fmt.get('vcodec', 'none') != 'none' and fmt.get('acodec', 'none') == 'none':
+                            if not best_video or fmt.get('height', 0) > best_video.get('height', 0):
+                                best_video = fmt
+                    
+                    if best_video:
+                        info_str += f"\nBest Video Quality Available: {best_video.get('height', 'Unknown')}p\n"
                 
             self.print_information_signal.emit(info_str)
         except Exception as e:
@@ -76,11 +78,12 @@ class DownloadThread(QThread):
     download_error = pyqtSignal(str)
     info_update = pyqtSignal(dict)
 
-    def __init__(self, url, choice, destination):
+    def __init__(self, url, choice, destination, quality):
         super().__init__()
         self.url = url
         self.choice = choice  # 1 for audio, 2 for video
         self.destination = destination
+        self.quality = quality  # Video quality selection
         
     def progress_hook(self, d):
         if d['status'] == 'downloading':
@@ -129,16 +132,30 @@ class DownloadThread(QThread):
                     }]
                 })
                 self.status_update.emit("Downloading audio in MP3 format...")
-            else:  # Video (MP4) - USING A SIMPLER APPROACH
-                # Force format 18 which is a progressive format (audio+video together)
-                # or format 22 which is HD with audio
+            else:  # Video (MP4)
+                # Set format based on quality selection
+                if self.quality == "best":
+                    # Get the best video and audio quality
+                    fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                elif self.quality == "1080p":
+                    # Try to get 1080p or fall back to lower quality
+                    fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best"
+                elif self.quality == "720p":
+                    # Try to get 720p or fall back to lower quality
+                    fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
+                elif self.quality == "480p":
+                    # Try to get 480p or fall back to lower quality
+                    fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best"
+                else:
+                    # Default to best quality
+                    fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                
                 ydl_opts.update({
-                    # Use format that already has audio and video together
-                    'format': '22/18/best',  # Try HD, then standard, then any best available
+                    'format': fmt,
                     'merge_output_format': 'mp4',
                 })
                 
-                self.status_update.emit("Downloading video in MP4 format...")
+                self.status_update.emit(f"Downloading video in {self.quality} quality (MP4 format)...")
             
             # First get info to display
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -172,11 +189,11 @@ class DMCApp(QWidget):
         # Check for FFmpeg at startup
         if not check_ffmpeg():
             self.show_warning_message("FFmpeg not detected", 
-                "FFmpeg is required for proper audio/video merging. Without it, you may get separate audio and video files.\n\n"
+                "FFmpeg is required for high-quality video downloads. Without it, you may get lower quality videos or separate audio and video files.\n\n"
                 "Please install FFmpeg to ensure the best results.")
 
     def init_ui(self):
-        self.setWindowTitle("DMC - YouTube Downloader (yt-dlp version)")
+        self.setWindowTitle("DMC - YouTube Downloader (High Quality)")
         self.resize(600, 500)  # Make the window larger for more information
 
         main_layout = QVBoxLayout()
@@ -207,11 +224,20 @@ class DMCApp(QWidget):
         self.label_format = QLabel("Choose download format:")
         self.radio_audio = QRadioButton("MP3 (Audio)")
         self.radio_video = QRadioButton("MP4 (Video)")
-        self.radio_audio.setChecked(True)  # Default to audio
+        self.radio_video.setChecked(True)  # Default to video
         format_layout.addWidget(self.label_format)
         format_layout.addWidget(self.radio_audio)
         format_layout.addWidget(self.radio_video)
         main_layout.addLayout(format_layout)
+        
+        # Quality selection (for video)
+        quality_layout = QHBoxLayout()
+        self.label_quality = QLabel("Video Quality:")
+        self.combo_quality = QComboBox()
+        self.combo_quality.addItems(["best", "1080p", "720p", "480p"])
+        quality_layout.addWidget(self.label_quality)
+        quality_layout.addWidget(self.combo_quality)
+        main_layout.addLayout(quality_layout)
         
         # Download button
         self.button_download = QPushButton("Download", self)
@@ -268,10 +294,11 @@ class DMCApp(QWidget):
             self.edit_destination.setText(destination)
 
         choice = 1 if self.radio_audio.isChecked() else 2
+        quality = self.combo_quality.currentText()
 
         try:
             # yt-dlp natively handles playlists, so we just add the URL to the queue
-            self.download_queue.append((url, choice, destination))
+            self.download_queue.append((url, choice, destination, quality))
             self.status_label.setText("Added to queue. Starting download...")
             self.process_queue()
                 
@@ -281,12 +308,12 @@ class DMCApp(QWidget):
     def process_queue(self):
         if not self.processing_queue and self.download_queue:
             self.processing_queue = True
-            url, choice, destination = self.download_queue.pop(0)
+            url, choice, destination, quality = self.download_queue.pop(0)
             
             # Show what's being downloaded
             self.status_label.setText(f"Initializing download...")
             
-            self.download_thread = DownloadThread(url, choice, destination)
+            self.download_thread = DownloadThread(url, choice, destination, quality)
             self.download_thread.progress_update.connect(self.update_progress)
             self.download_thread.status_update.connect(self.update_status)
             self.download_thread.download_complete.connect(self.download_finished)
