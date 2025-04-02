@@ -15,6 +15,14 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "yt-dlp"])
     import yt_dlp
 
+# Check if FFmpeg is installed
+def check_ffmpeg():
+    try:
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+        return True
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return False
+
 class VideoProcessor(QObject):
     print_information_signal = pyqtSignal(str)
 
@@ -92,6 +100,11 @@ class DownloadThread(QThread):
 
     def run(self):
         try:
+            # Check if FFmpeg is installed
+            if not check_ffmpeg():
+                self.download_error.emit("FFmpeg is not installed. Please install FFmpeg to merge audio and video.")
+                return
+                
             self.status_update.emit(f"Initializing download for: {self.url}")
             
             # Make sure destination exists
@@ -99,8 +112,8 @@ class DownloadThread(QThread):
             
             # Base options for both audio and video
             ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
+                'quiet': False,  # Show output for debugging
+                'verbose': True,  # More detailed output
                 'progress_hooks': [self.progress_hook],
                 'outtmpl': os.path.join(self.destination, '%(title)s.%(ext)s'),
                 'ignoreerrors': True,  # Skip videos that cannot be downloaded
@@ -116,18 +129,15 @@ class DownloadThread(QThread):
                     }]
                 })
                 self.status_update.emit("Downloading audio in MP3 format...")
-            else:  # Video (MP4)
+            else:  # Video (MP4) - USING A SIMPLER APPROACH
+                # Force format 18 which is a progressive format (audio+video together)
+                # or format 22 which is HD with audio
                 ydl_opts.update({
-                    # Download best mp4 format available with video and audio merged
-                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                    # Merge the video and audio
+                    # Use format that already has audio and video together
+                    'format': '22/18/best',  # Try HD, then standard, then any best available
                     'merge_output_format': 'mp4',
-                    # Enable FFmpeg post-processing
-                    'postprocessors': [{
-                        'key': 'FFmpegVideoConvertor',
-                        'preferedformat': 'mp4',
-                    }]
                 })
+                
                 self.status_update.emit("Downloading video in MP4 format...")
             
             # First get info to display
@@ -158,6 +168,12 @@ class DMCApp(QWidget):
         self.timer.timeout.connect(self.process_queue)
         
         self.init_ui()
+        
+        # Check for FFmpeg at startup
+        if not check_ffmpeg():
+            self.show_warning_message("FFmpeg not detected", 
+                "FFmpeg is required for proper audio/video merging. Without it, you may get separate audio and video files.\n\n"
+                "Please install FFmpeg to ensure the best results.")
 
     def init_ui(self):
         self.setWindowTitle("DMC - YouTube Downloader (yt-dlp version)")
@@ -309,6 +325,14 @@ class DMCApp(QWidget):
         error_dialog.setInformativeText(message)
         error_dialog.setWindowTitle("Error")
         error_dialog.exec_()
+
+    def show_warning_message(self, title, message):
+        warning_dialog = QMessageBox(self)
+        warning_dialog.setIcon(QMessageBox.Warning)
+        warning_dialog.setText(title)
+        warning_dialog.setInformativeText(message)
+        warning_dialog.setWindowTitle("Warning")
+        warning_dialog.exec_()
 
     def show_info_message(self, message):
         info_dialog = QMessageBox(self)
