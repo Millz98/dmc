@@ -191,7 +191,7 @@ class DMCApp(QWidget):
             self.show_warning_message("FFmpeg not detected", 
                 "FFmpeg is required for high-quality video downloads. Without it, you may get lower quality videos or separate audio and video files.\n\n"
                 "Please install FFmpeg to ensure the best results.")
-
+        #code below is for the GUI and the layout of the app
     def init_ui(self):
         self.setWindowTitle("DMC - YouTube Downloader (High Quality)")
         self.resize(600, 500)  # Make the window larger for more information
